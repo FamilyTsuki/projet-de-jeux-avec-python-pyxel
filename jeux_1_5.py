@@ -1,4 +1,5 @@
 import math
+
 import pyxel
 
 
@@ -155,7 +156,7 @@ class Joueur:
         if self.crossing_info is not None:
             return
 
-        p = t1 if s == "l" else t2
+        portal = Portal1 if s == "l" else Portal2
         portal_id = 1 if s == "l" else 2
         beam_color = 12 if s == "l" else 9
 
@@ -171,22 +172,24 @@ class Joueur:
 
         if angle in (0, 180):
             hy = max(-880.0, min(86.0, hy))
-            p.set_pos(hx, hy)
+            portal.set_pos(hx, hy)
         else:
             hx = max(16.0, min(366.0, hx))
-            p.set_pos(hx, hy)
+            portal.set_pos(hx, hy)
 
-        p.set_angle(angle)
-        p.active = True
+        portal.set_angle(angle)
+        portal.active = True
 
-        self.shot_beams.append({
-            "x1": self.x + 8,
-            "y1": self.y + 8,
-            "x2": p.pos_x,
-            "y2": p.pos_y,
-            "color": beam_color,
-            "time": 4
-        })
+        self.shot_beams.append(
+            {
+                "x1": self.x + 8,
+                "y1": self.y + 8,
+                "x2": portal.pos_x,
+                "y2": portal.pos_y,
+                "color": beam_color,
+                "time": 4,
+            }
+        )
 
         try:
             pyxel.play(1, portal_id)
@@ -202,7 +205,11 @@ class Joueur:
         if pyxel.btnp(pyxel.MOUSE_BUTTON_RIGHT):
             self.recherche_mur("r")
 
-        moving_left = pyxel.btn(pyxel.KEY_Q) or pyxel.btn(pyxel.KEY_A) or pyxel.btn(pyxel.KEY_LEFT)
+        moving_left = (
+            pyxel.btn(pyxel.KEY_Q)
+            or pyxel.btn(pyxel.KEY_A)
+            or pyxel.btn(pyxel.KEY_LEFT)
+        )
         moving_right = pyxel.btn(pyxel.KEY_D) or pyxel.btn(pyxel.KEY_RIGHT)
         self.is_moving = moving_left or moving_right
 
@@ -214,10 +221,10 @@ class Joueur:
             self.dir = -1
 
         jump_pressed = (
-            pyxel.btnp(pyxel.KEY_Z) or
-            pyxel.btnp(pyxel.KEY_W) or
-            pyxel.btnp(pyxel.KEY_UP) or
-            pyxel.btnp(pyxel.KEY_SPACE)
+            pyxel.btnp(pyxel.KEY_Z)
+            or pyxel.btnp(pyxel.KEY_W)
+            or pyxel.btnp(pyxel.KEY_UP)
+            or pyxel.btnp(pyxel.KEY_SPACE)
         )
 
         if self.crossing_info is not None:
@@ -235,7 +242,7 @@ class Joueur:
         if pyxel.btnp(pyxel.KEY_R):
             self.respawn()
 
-    def actu1(self):
+    def aplicationModifierToVelocity(self):
         if self.crossing_info is not None:
             pin = self.crossing_info["pin"]
             if pin.angle in (0, 180):
@@ -246,9 +253,6 @@ class Joueur:
                         self.vx = 0.0
             else:
                 self.vx = 0.0
-                self.vy += 0.4
-                if self.vy > 12.0:
-                    self.vy = 12.0
         else:
             self.vy += 0.4
             if self.vy > 12.0:
@@ -269,11 +273,13 @@ class Joueur:
         for b in self.shot_beams:
             b["time"] -= 1
 
-        for p in self.particles:
-            p["x"] += p["vx"]
-            p["y"] += p["vy"]
-            p["life"] -= 1
-        self.particles = [p for p in self.particles if p["life"] > 0]
+        for particule in self.particles:
+            particule["x"] += particule["vx"]
+            particule["y"] += particule["vy"]
+            particule["life"] -= 1
+        self.particles = [
+            particule for particule in self.particles if particule["life"] > 0
+        ]
 
     def set_tran(self, n, m):
         self.tran[n] = m
@@ -283,18 +289,20 @@ class Joueur:
             angle = (pyxel.frame_count * 23 + _ * 45) % 360
             rad = math.radians(angle)
             speed = 1.0 + (_ % 3) * 0.8
-            self.particles.append({
-                "x": x,
-                "y": y,
-                "vx": math.cos(rad) * speed,
-                "vy": math.sin(rad) * speed,
-                "color": color,
-                "life": 12
-            })
+            self.particles.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "vx": math.cos(rad) * speed,
+                    "vy": math.sin(rad) * speed,
+                    "color": color,
+                    "life": 12,
+                }
+            )
 
     def portaille(self):
-        global t1, t2
-        if not (t1.active and t2.active):
+        global Portal1, Portal2
+        if not (Portal1.active and Portal2.active):
             self.crossing_info = None
             return
 
@@ -319,7 +327,7 @@ class Joueur:
                 if speed < 0.1:
                     speed = 0.1
 
-                self.spawn_particles(pin.pos_x, pin.pos_y, 12 if pin == t1 else 9)
+                self.spawn_particles(pin.pos_x, pin.pos_y, 12 if pin == Portal1 else 9)
 
                 if pout.angle == 0:
                     self.x = pout.pos_x + 1.0
@@ -343,7 +351,7 @@ class Joueur:
                         self.vy = 0.0
                         self.en_saut = 1
                     else:
-                        self.y = pout.pos_y - 17.0
+                        self.y = pout.pos_y - 16.0
                         self.vx = 0.0
                         self.vy = -speed
                         self.en_saut = 0
@@ -354,8 +362,12 @@ class Joueur:
                     self.vy = speed
                     self.en_saut = 0
 
-                self.spawn_particles(pout.pos_x, pout.pos_y, 12 if pout == t1 else 9)
-                self.teleport_cooldown = 15 if pout.angle == 270 else 3
+                self.spawn_particles(
+                    pout.pos_x, pout.pos_y, 12 if pout == Portal1 else 9
+                )
+                self.teleport_cooldown = (
+                    15 if (pout.angle == 270 and speed < 1.0) else 3
+                )
                 self.crossing_info = None
 
                 try:
@@ -390,7 +402,7 @@ class Joueur:
         if self.teleport_cooldown > 0:
             return
 
-        for pin, pout in ((t1, t2), (t2, t1)):
+        for pin, pout in ((Portal1, Portal2), (Portal2, Portal1)):
             if not pin.active or not pout.active:
                 continue
 
@@ -399,7 +411,12 @@ class Joueur:
                 if abs(lat) <= 12.0 and self.vx > 0.0:
                     depth = (self.x + 16.0) - pin.pos_x
                     if 0.0 < depth < 16.0:
-                        self.crossing_info = {"pin": pin, "pout": pout, "depth": depth, "lat": lat}
+                        self.crossing_info = {
+                            "pin": pin,
+                            "pout": pout,
+                            "depth": depth,
+                            "lat": lat,
+                        }
                         self.y = pin.pos_y + lat - 8.0
                         self.vy = 0.0
                         self.en_saut = 1
@@ -409,7 +426,12 @@ class Joueur:
                 if abs(lat) <= 12.0 and self.vx < 0.0:
                     depth = pin.pos_x - self.x
                     if 0.0 < depth < 16.0:
-                        self.crossing_info = {"pin": pin, "pout": pout, "depth": depth, "lat": lat}
+                        self.crossing_info = {
+                            "pin": pin,
+                            "pout": pout,
+                            "depth": depth,
+                            "lat": lat,
+                        }
                         self.y = pin.pos_y + lat - 8.0
                         self.vy = 0.0
                         self.en_saut = 1
@@ -419,7 +441,12 @@ class Joueur:
                 if abs(lat) <= 8.0 and self.vy >= 0.0:
                     depth = (self.y + 16.0) - pin.pos_y
                     if 0.0 < depth < 16.0:
-                        self.crossing_info = {"pin": pin, "pout": pout, "depth": depth, "lat": lat}
+                        self.crossing_info = {
+                            "pin": pin,
+                            "pout": pout,
+                            "depth": depth,
+                            "lat": lat,
+                        }
                         self.x = pin.pos_x + lat - 8.0
                         self.vx = 0.0
                         return
@@ -428,13 +455,18 @@ class Joueur:
                 if abs(lat) <= 8.0 and self.vy <= 0.0:
                     depth = pin.pos_y - self.y
                     if 0.0 < depth < 16.0:
-                        self.crossing_info = {"pin": pin, "pout": pout, "depth": depth, "lat": lat}
+                        self.crossing_info = {
+                            "pin": pin,
+                            "pout": pout,
+                            "depth": depth,
+                            "lat": lat,
+                        }
                         self.x = pin.pos_x + lat - 8.0
                         self.vx = 0.0
                         return
 
     def colision(self):
-        global t1, t2
+        global Portal1, Portal2
 
         if self.crossing_info is not None:
             if self.y > 220.0:
@@ -446,10 +478,14 @@ class Joueur:
                 if x1 <= self.x + 8 <= x2:
                     if self.y + 16 >= py and (self.y + 16 - self.vy) <= py + 8:
                         in_floor = False
-                        for p in (t1, t2):
-                            if p.active and p.angle == 270 and abs(p.pos_y - py) < 6:
+                        for portal in (Portal1, Portal2):
+                            if (
+                                portal.active
+                                and portal.angle == 270
+                                and abs(portal.pos_y - py) < 6
+                            ):
                                 if self.teleport_cooldown == 0:
-                                    if abs(p.pos_x - (self.x + 8)) <= 8:
+                                    if abs(portal.pos_x - (self.x + 8)) <= 8:
                                         in_floor = True
                                         break
                         if not in_floor:
@@ -459,9 +495,9 @@ class Joueur:
 
         if self.x <= 0.0:
             in_portal = False
-            for p in (t1, t2):
-                if p.active and p.angle == 0 and abs(p.pos_x) < 6:
-                    if abs((self.y + 8.0) - p.pos_y) <= 12.0:
+            for portal in (Portal1, Portal2):
+                if portal.active and portal.angle == 0 and abs(portal.pos_x) < 6:
+                    if abs((self.y + 8.0) - portal.pos_y) <= 12.0:
                         in_portal = True
                         break
             if not in_portal:
@@ -471,9 +507,13 @@ class Joueur:
 
         if self.x + 16.0 >= 382.0:
             in_portal = False
-            for p in (t1, t2):
-                if p.active and p.angle == 180 and abs(p.pos_x - 382.0) < 6:
-                    if abs((self.y + 8.0) - p.pos_y) <= 12.0:
+            for portal in (Portal1, Portal2):
+                if (
+                    portal.active
+                    and portal.angle == 180
+                    and abs(portal.pos_x - 382.0) < 6
+                ):
+                    if abs((self.y + 8.0) - portal.pos_y) <= 12.0:
                         in_portal = True
                         break
             if not in_portal:
@@ -484,7 +524,7 @@ class Joueur:
         if self.y > 220.0:
             self.respawn()
 
-    def actu2(self):
+    def aplicationVelocityToCoordonate(self):
         self.x += self.vx
         self.y += self.vy
 
@@ -492,6 +532,93 @@ class Joueur:
         self.co["2"] = [self.x + 16.0, self.y + 16.0, self.vx, self.vy]
         self.co["3"] = [self.x, self.y, self.vx, self.vy]
         self.co["4"] = [self.x + 16.0, self.y, self.vx, self.vy]
+
+    def drawPlayer(self):
+        """draw player start"""
+
+        if self.en_saut == 0:
+            sprite_u = 48
+        elif self.is_moving:
+            sprite_u = 0 if (pyxel.frame_count // 5) % 2 == 0 else 16
+        else:
+            sprite_u = 0
+
+        sprite_w = 16 if self.dir > 0 else -16
+
+        if self.crossing_info is not None:
+            pin = self.crossing_info["pin"]
+            pout = self.crossing_info["pout"]
+            depth = self.crossing_info["depth"]
+            lat = self.crossing_info["lat"]
+            lat_clamped = min(6.0, max(-6.0, lat))
+
+            if pin.angle == 180:
+                pyxel.clip(0, 0, max(0, int(pin.pos_x)), 230)
+            elif pin.angle == 0:
+                pyxel.clip(max(0, int(pin.pos_x)), 0, 384, 230)
+            elif pin.angle == 270:
+                sy = int(pin.pos_y - self.cam_y)
+                pyxel.clip(0, 0, 384, max(0, sy))
+            elif pin.angle == 90:
+                sy = int(pin.pos_y - self.cam_y)
+                pyxel.clip(0, max(0, sy), 384, 230)
+
+            pyxel.blt(self.x, self.y, 0, sprite_u, 32, sprite_w, 16, 7)
+
+            if pout.angle == 0:
+                pyxel.clip(max(0, int(pout.pos_x)), 0, 384, 230)
+                pyxel.blt(
+                    pout.pos_x + depth - 16,
+                    pout.pos_y + lat_clamped - 8,
+                    0,
+                    sprite_u,
+                    32,
+                    16,
+                    16,
+                    7,
+                )
+            elif pout.angle == 180:
+                pyxel.clip(0, 0, max(0, int(pout.pos_x)), 230)
+                pyxel.blt(
+                    pout.pos_x - depth,
+                    pout.pos_y + lat_clamped - 8,
+                    0,
+                    sprite_u,
+                    32,
+                    -16,
+                    16,
+                    7,
+                )
+            elif pout.angle == 270:
+                sy = int(pout.pos_y - self.cam_y)
+                pyxel.clip(0, 0, 384, max(0, sy))
+                pyxel.blt(
+                    pout.pos_x + lat_clamped - 8,
+                    pout.pos_y - depth,
+                    0,
+                    sprite_u,
+                    32,
+                    sprite_w,
+                    16,
+                    7,
+                )
+            elif pout.angle == 90:
+                sy = int(pout.pos_y - self.cam_y)
+                pyxel.clip(0, max(0, sy), 384, 230)
+                pyxel.blt(
+                    pout.pos_x + lat_clamped - 8,
+                    pout.pos_y + depth - 16,
+                    0,
+                    sprite_u,
+                    32,
+                    sprite_w,
+                    16,
+                    7,
+                )
+
+            pyxel.clip()
+        else:
+            pyxel.blt(self.x, self.y, 0, sprite_u, 32, sprite_w, 16, 7)
 
 
 class Jeux:
@@ -509,10 +636,10 @@ class Jeux:
         except Exception:
             pass
 
-        global p1, t1, t2
-        t1 = Portail(120, 100, 270, True)
-        t2 = Portail(382, 40, 180, True)
-        p1 = Joueur()
+        global player, Portal1, Portal2
+        Portal1 = Portail(120, 100, 270, True)
+        Portal2 = Portail(382, 40, 180, True)
+        player = Joueur()
 
         self.cam_y = -100.0
         self.show_help = True
@@ -520,21 +647,21 @@ class Jeux:
         pyxel.run(self.update, self.draw)
 
     def update(self):
-        global p1
-        p1.commande()
-        p1.actu1()
-        p1.portaille()
-        p1.colision()
-        p1.actu2()
+        global player
+        player.commande()
+        player.aplicationModifierToVelocity()
+        player.portaille()
+        player.colision()
+        player.aplicationVelocityToCoordonate()
 
         if pyxel.btnp(pyxel.KEY_H):
             self.show_help = not self.show_help
 
     def draw(self):
-        global p1, t1, t2
+        global player, Portal1, Portal2
         pyxel.cls(0)
 
-        target_cam_y = p1.y - 120.0
+        target_cam_y = player.y - 120.0
         clamped_cam = min(-100.0, max(-820.0, target_cam_y))
         self.cam_y += (clamped_cam - self.cam_y) * 0.15
         Jeux.current_cam_y = self.cam_y
@@ -542,94 +669,52 @@ class Jeux:
 
         pyxel.bltm(0, -924, 0, 0, 0, 416, 1032)
 
-        for beam in p1.shot_beams:
+        for beam in player.shot_beams:
             pyxel.line(beam["x1"], beam["y1"], beam["x2"], beam["y2"], beam["color"])
 
-        for pt in p1.particles:
+        for pt in player.particles:
             pyxel.pset(pt["x"], pt["y"], pt["color"])
 
-        t1.draw(1)
-        t2.draw(2)
+        Portal1.draw(1)
+        Portal2.draw(2)
 
-        if p1.en_saut == 0:
-            sprite_u = 48
-        elif p1.is_moving:
-            sprite_u = 0 if (pyxel.frame_count // 5) % 2 == 0 else 16
-        else:
-            sprite_u = 0
-
-        sprite_w = 16 if p1.dir > 0 else -16
-
-        if p1.crossing_info is not None:
-            pin = p1.crossing_info["pin"]
-            pout = p1.crossing_info["pout"]
-            depth = p1.crossing_info["depth"]
-            lat = p1.crossing_info["lat"]
-            lat_clamped = min(6.0, max(-6.0, lat))
-
-            if pin.angle == 180:
-                pyxel.clip(0, 0, max(0, int(pin.pos_x)), 230)
-            elif pin.angle == 0:
-                pyxel.clip(max(0, int(pin.pos_x)), 0, 384, 230)
-            elif pin.angle == 270:
-                sy = int(pin.pos_y - self.cam_y)
-                pyxel.clip(0, 0, 384, max(0, sy))
-            elif pin.angle == 90:
-                sy = int(pin.pos_y - self.cam_y)
-                pyxel.clip(0, max(0, sy), 384, 230)
-
-            pyxel.blt(p1.x, p1.y, 0, sprite_u, 32, sprite_w, 16, 7)
-
-            if pout.angle == 0:
-                pyxel.clip(max(0, int(pout.pos_x)), 0, 384, 230)
-                pyxel.blt(pout.pos_x + depth - 16, pout.pos_y + lat_clamped - 8, 0, sprite_u, 32, 16, 16, 7)
-            elif pout.angle == 180:
-                pyxel.clip(0, 0, max(0, int(pout.pos_x)), 230)
-                pyxel.blt(pout.pos_x - depth, pout.pos_y + lat_clamped - 8, 0, sprite_u, 32, -16, 16, 7)
-            elif pout.angle == 270:
-                sy = int(pout.pos_y - self.cam_y)
-                pyxel.clip(0, 0, 384, max(0, sy))
-                pyxel.blt(pout.pos_x + lat_clamped - 8, pout.pos_y - depth, 0, sprite_u, 32, sprite_w, 16, 7)
-            elif pout.angle == 90:
-                sy = int(pout.pos_y - self.cam_y)
-                pyxel.clip(0, max(0, sy), 384, 230)
-                pyxel.blt(pout.pos_x + lat_clamped - 8, pout.pos_y + depth - 16, 0, sprite_u, 32, sprite_w, 16, 7)
-
-            pyxel.clip()
-        else:
-            pyxel.blt(p1.x, p1.y, 0, sprite_u, 32, sprite_w, 16, 7)
-
+        player.drawPlayer()
         pyxel.camera()
 
         pyxel.rect(0, 0, 384, 13, 0)
         pyxel.line(0, 13, 384, 13, 5)
 
         pyxel.text(8, 4, "PORTAL 2D", 7)
-        info_txt = f"X:{int(p1.x)} Y:{int(p1.y)} VX:{p1.vx:.1f} VY:{p1.vy:.1f}"
+        info_txt = (
+            f"X:{int(player.x)} Y:{int(player.y)} VX:{player.vx:.1f} VY:{player.vy:.1f}"
+        )
         pyxel.text(70, 4, info_txt, 6)
 
-        p1_lbl = "P1: " + ("OK" if t1.active else "--")
-        p2_lbl = "P2: " + ("OK" if t2.active else "--")
-        pyxel.text(260, 4, p1_lbl, 12 if t1.active else 5)
-        pyxel.text(320, 4, p2_lbl, 9 if t2.active else 4)
+        player_lbl = "player: " + ("OK" if Portal1.active else "--")
+        pyxel.text(260, 4, player_lbl, 12 if Portal1.active else 5)
 
         if self.show_help:
             pyxel.rect(0, 218, 384, 12, 0)
             pyxel.line(0, 217, 384, 217, 5)
-            pyxel.text(6, 221, "ZQSD/WASD: Deplacer | Clic G: P1 Bleu | Clic D: P2 Orange | R: Respawn | H: Aide", 7)
+            pyxel.text(
+                6,
+                221,
+                "ZQSD/WASD: Deplacer | Clic G: Portal2 Bleu | Clic D: Portal2 Orange | R: Respawn | H: Aide",
+                7,
+            )
 
         mx = pyxel.mouse_x
         my = pyxel.mouse_y
         pyxel.circb(mx, my, 4, 7)
-        pyxel.pset(mx - 2, my, 12 if t1.active else 5)
-        pyxel.pset(mx + 2, my, 9 if t2.active else 4)
+        pyxel.pset(mx - 2, my, 12 if Portal1.active else 5)
+        pyxel.pset(mx + 2, my, 9 if Portal2.active else 4)
         pyxel.pset(mx, my, 7)
 
 
-global t1, t2, p1
-t1 = Portail(120, 100, 270, True)
-t2 = Portail(382, 40, 180, True)
-p1 = Joueur()
+global Portal1, Portal2, player
+Portal1 = Portail(120, 100, 270, True)
+Portal2 = Portail(382, 40, 180, True)
+player = Joueur()
 
 if __name__ == "__main__":
     Jeux()
