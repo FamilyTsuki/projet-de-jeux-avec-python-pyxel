@@ -66,7 +66,6 @@ class Joueur:
         self.en_saut = 1
         self.tc = 0
         self.teleport_cooldown = 0
-        self.last_exit_portal = None
         self.shot_beams = []
         self.particles = []
         self.is_moving = False
@@ -90,7 +89,6 @@ class Joueur:
         self.vy = 0.0
         self.en_saut = 1
         self.teleport_cooldown = 0
-        self.last_exit_portal = None
         self.crossing_info = None
 
     def vecteur(self):
@@ -180,7 +178,6 @@ class Joueur:
 
         p.set_angle(angle)
         p.active = True
-        self.last_exit_portal = None
 
         self.shot_beams.append({
             "x1": self.x + 8,
@@ -243,6 +240,10 @@ class Joueur:
             pin = self.crossing_info["pin"]
             if pin.angle in (0, 180):
                 self.vy = 0.0
+                if not self.is_moving:
+                    self.vx *= 0.75
+                    if abs(self.vx) < 0.15:
+                        self.vx = 0.0
             else:
                 self.vx = 0.0
                 self.vy += 0.4
@@ -263,11 +264,6 @@ class Joueur:
 
         if self.teleport_cooldown > 0:
             self.teleport_cooldown -= 1
-
-        if self.last_exit_portal is not None:
-            p = self.last_exit_portal
-            if abs((self.x + 8.0) - p.pos_x) > 16.0 or abs((self.y + 8.0) - p.pos_y) > 16.0:
-                self.last_exit_portal = None
 
         self.shot_beams = [b for b in self.shot_beams if b["time"] > 0]
         for b in self.shot_beams:
@@ -341,10 +337,16 @@ class Joueur:
                     self.en_saut = 0
                 elif pout.angle == 270:
                     self.x = pout.pos_x + lat - 8.0
-                    self.y = pout.pos_y - 17.0
-                    self.vx = 0.0
-                    self.vy = -speed
-                    self.en_saut = 0
+                    if speed < 1.0:
+                        self.y = pout.pos_y - 16.0
+                        self.vx = 0.0
+                        self.vy = 0.0
+                        self.en_saut = 1
+                    else:
+                        self.y = pout.pos_y - 17.0
+                        self.vx = 0.0
+                        self.vy = -speed
+                        self.en_saut = 0
                 elif pout.angle == 90:
                     self.x = pout.pos_x + lat - 8.0
                     self.y = pout.pos_y + 1.0
@@ -353,8 +355,7 @@ class Joueur:
                     self.en_saut = 0
 
                 self.spawn_particles(pout.pos_x, pout.pos_y, 12 if pout == t1 else 9)
-                self.teleport_cooldown = 12
-                self.last_exit_portal = pout
+                self.teleport_cooldown = 15 if pout.angle == 270 else 3
                 self.crossing_info = None
 
                 try:
@@ -390,7 +391,7 @@ class Joueur:
             return
 
         for pin, pout in ((t1, t2), (t2, t1)):
-            if pin == self.last_exit_portal or not pin.active:
+            if not pin.active or not pout.active:
                 continue
 
             if pin.angle == 180:
@@ -447,7 +448,7 @@ class Joueur:
                         in_floor = False
                         for p in (t1, t2):
                             if p.active and p.angle == 270 and abs(p.pos_y - py) < 6:
-                                if p != self.last_exit_portal and self.teleport_cooldown == 0:
+                                if self.teleport_cooldown == 0:
                                     if abs(p.pos_x - (self.x + 8)) <= 8:
                                         in_floor = True
                                         break
@@ -460,7 +461,7 @@ class Joueur:
             in_portal = False
             for p in (t1, t2):
                 if p.active and p.angle == 0 and abs(p.pos_x) < 6:
-                    if p != self.last_exit_portal and abs((self.y + 8.0) - p.pos_y) <= 12.0:
+                    if abs((self.y + 8.0) - p.pos_y) <= 12.0:
                         in_portal = True
                         break
             if not in_portal:
@@ -472,7 +473,7 @@ class Joueur:
             in_portal = False
             for p in (t1, t2):
                 if p.active and p.angle == 180 and abs(p.pos_x - 382.0) < 6:
-                    if p != self.last_exit_portal and abs((self.y + 8.0) - p.pos_y) <= 12.0:
+                    if abs((self.y + 8.0) - p.pos_y) <= 12.0:
                         in_portal = True
                         break
             if not in_portal:
