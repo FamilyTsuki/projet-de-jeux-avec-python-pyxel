@@ -9,5 +9,9 @@ if [ ! -d ".venv" ]; then
     .venv/bin/pip install pyxel
 fi
 
+if [ "${1:-}" = "editeur" ]; then
+    exec .venv/bin/python editeur.py
+fi
+
 exec .venv/bin/python jeux_1_5.py "$@"
 

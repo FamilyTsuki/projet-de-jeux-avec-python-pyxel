@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Éditeur de niveau – Portal 2D</title>
+<style>
+  :root {
+    --bg: #14172b; --panel: #1d2140; --line: #2f3563; --text: #e6e8f5;
+    --muted: #9aa0c8; --accent: #e9c35b; --blue: #7696de; --orange: #d38441;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #app { display: grid; grid-template-columns: 190px 1fr 240px; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 12px;
+    overflow-y: auto; }
+  aside.right { border-right: 0; border-left: 1px solid var(--line); }
+  h1 { font-size: 14px; margin: 0 0 12px; }
+  h2 { font-size: 11px; color: var(--muted); font-weight: 600; margin: 16px 0 6px;
+    text-transform: none; }
+  .tool { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;
+    margin-bottom: 3px; background: transparent; color: var(--text); border: 1px solid transparent;
+    border-radius: 6px; cursor: pointer; text-align: left; font: inherit; }
+  .tool:hover { background: #262b52; }
+  .tool.active { background: #2c3366; border-color: var(--blue); }
+  .tool kbd { margin-left: auto; color: var(--muted); font-size: 11px; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid #000; }
+  button.act { width: 100%; padding: 7px; margin-bottom: 6px; border-radius: 6px; cursor: pointer;
+    background: #2c3366; color: var(--text); border: 1px solid var(--line); font: inherit; }
+  button.act:hover { border-color: var(--blue); }
+  button.primary { background: var(--accent); color: #1a1a1a; border-color: var(--accent); font-weight: 600; }
+  label.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; }
+  input[type=number], input[type=text], select { width: 110px; background: #11142a; color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; font: inherit; }
+  input[type=text].wide { width: 100%; }
+  #stage { position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #status { position: absolute; left: 10px; bottom: 8px; padding: 4px 8px; border-radius: 4px;
+    background: rgba(0,0,0,.6); font-size: 12px; pointer-events: none; }
+  #coords { position: absolute; right: 10px; bottom: 8px; padding: 4px 8px; border-radius: 4px;
+    background: rgba(0,0,0,.6); font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .help { color: var(--muted); font-size: 12px; }
+  .help b { color: var(--text); font-weight: 600; }
+  .warn { color: #ff9798; font-size: 12px; margin-top: 6px; }
+  #props-empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <h1>Éditeur de niveau</h1>
+    <h2>Outils</h2>
+    <div id="tools"></div>
+
+    <h2>Grille</h2>
+    <label class="row">Aimant
+      <select id="snap">
+        <option value="1">1 px</option><option value="2">2 px</option>
+        <option value="4" selected>4 px</option><option value="8">8 px</option>
+        <option value="16">16 px</option>
+      </select>
+    </label>
+    <label class="row">Guide de saut <input type="checkbox" id="jumpguide" checked></label>
+
+    <h2>Fichier</h2>
+    <button class="act primary" id="btn-save">Sauvegarder (Ctrl+S)</button>
+    <button class="act" id="btn-play">Jouer</button>
+    <button class="act" id="btn-export">Exporter .json</button>
+    <button class="act" id="btn-import">Importer .json</button>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+  </aside>
+
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="status">Chargement…</div>
+    <div id="coords"></div>
+  </div>
+
+  <aside class="right">
+    <h2>Sélection</h2>
+    <div id="props"><div id="props-empty">Rien de sélectionné.<br>Outil Sélection (V) puis clic sur un objet.</div></div>
+
+    <h2>Raccourcis</h2>
+    <div class="help">
+      <b>Glisser</b> : dessiner avec l'outil<br>
+      <b>Clic droit</b> : supprimer sous la souris<br>
+      <b>Molette</b> : monter / descendre<br>
+      <b>Ctrl + molette</b> : zoom<br>
+      <b>Ctrl + glisser</b>, <b>Espace + glisser</b> ou <b>clic molette</b> : déplacer la vue<br>
+      <b>Alt</b> pendant un glisser : ignorer l'aimant des objets<br>
+      <b>Suppr</b> : supprimer la sélection<br>
+      <b>Ctrl+C / Ctrl+X / Ctrl+V</b> : copier / couper / coller sous la souris<br>
+      <b>Ctrl+D</b> : dupliquer<br>
+      <b>B</b> : bloc gris ⇄ portail<br>
+      <b>Flèches</b> : déplacer (Maj = ×4)<br>
+      <b>Ctrl+Z / Ctrl+Y</b> : annuler / refaire<br>
+      <b>Bords</b> d'un objet sélectionné : redimensionner
+    </div>
+    <h2>Rappels physique</h2>
+    <div class="help">
+      Saut : <b>~49 px</b> de haut, <b>~126 px</b> de long en courant.<br>
+      Joueur : 16×16.<br>
+      Portail : surface bleu clair d'au moins <b>28 px</b>.<br>
+      Grille : on passe à travers par dessous.<br>
+      1 m affiché en jeu = 8 px.
+    </div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- palette pyxel
+const PAL = ["#000000","#2B335F","#7E2072","#19959C","#8B4852","#395C98","#A9C1FF","#EEEEEE",
+             "#D4186C","#D38441","#E9C35B","#70C6A9","#7696DE","#A3A3A3","#FF9798","#EDC7B0"];
+const WORLD_LEFT = -16, WORLD_RIGHT = 398, PLAYER = 16, GRATE_H = 4;
+
+const TOOLS = [
+  { id: "select", name: "Sélection", key: "v", color: null },
+  { id: "block",  name: "Bloc gris",  key: "1", color: PAL[5] },
+  { id: "white",  name: "Bloc portail (bleu clair)", key: "2", color: PAL[6] },
+  { id: "grate",  name: "Grille", key: "3", color: PAL[4] },
+  { id: "hazard", name: "Slime (retour départ)", key: "4", color: PAL[11] },
+  { id: "hint",   name: "Texte", key: "5", color: PAL[10] },
+  { id: "start",  name: "Départ joueur", key: "6", color: PAL[14] },
+  { id: "goal",   name: "Sommet / sortie", key: "7", color: PAL[9] },
+];
+
+// ---------------------------------------------------------------- serveur
+// Page servie par editeur.py -> chemins relatifs. Sinon (Live Server, file://)
+// on parle directement au serveur local de l'éditeur.
+const SERVEUR = "http://127.0.0.1:8765";
+const API = location.origin === SERVEUR ? "" : SERVEUR;
+const SANS_SERVEUR = "Serveur de l'éditeur éteint : lance « python editeur.py » dans le dossier du projet";
+
+// ---------------------------------------------------------------- état
+let objects = [];         // {type, x, y, w, h, portal?, text?, color?}
+let selected = null;
+let tool = "select";
+let undoStack = [], redoStack = [];
+let dirty = false;
+const view = { x: WORLD_LEFT - 20, y: -200, zoom: 2 };
+const mouse = { sx: 0, sy: 0, wx: 0, wy: 0, inside: false, alt: false };
+let drag = null;          // {mode, ...}
+let guides = [];
+let pressePapier = null;  // copie interne (Ctrl+C / Ctrl+X -> Ctrl+V)          // traits d'alignement affichés pendant un glisser
+let spaceDown = false;
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const statusEl = document.getElementById("status");
+const coordsEl = document.getElementById("coords");
+
+// ---------------------------------------------------------------- conversion niveau <-> objets
+function fromLevel(lv) {
+  const out = [];
+  for (const [x, y, w, h, p] of lv.blocks || []) out.push({ type: "block", x, y, w, h, portal: !!p });
+  for (const [x, y, w] of lv.grates || []) out.push({ type: "grate", x, y, w, h: GRATE_H });
+  for (const [x, y, w, h] of lv.hazards || []) out.push({ type: "hazard", x, y, w, h });
+  for (const [x, y, text, color] of lv.hints || []) out.push({ type: "hint", x, y, text, color, ...hintSize(text) });
+  const s = lv.start || [24, 84];
+  out.push({ type: "start", x: s[0], y: s[1], w: PLAYER, h: PLAYER });
+  const g = lv.goal || [0, 0, 40, 24];
+  out.push({ type: "goal", x: g[0], y: g[1], w: g[2], h: g[3] });
+  return out;
+}
+function toLevel() {
+  const r = (v) => Math.round(v);
+  const lv = { start: [24, 84], blocks: [], grates: [], hazards: [], hints: [], goal: [0, 0, 40, 24] };
+  for (const o of objects) {
+    if (o.type === "block") lv.blocks.push([r(o.x), r(o.y), r(o.w), r(o.h), !!o.portal]);
+    else if (o.type === "grate") lv.grates.push([r(o.x), r(o.y), r(o.w)]);
+    else if (o.type === "hazard") lv.hazards.push([r(o.x), r(o.y), r(o.w), r(o.h)]);
+    else if (o.type === "hint") lv.hints.push([r(o.x), r(o.y), o.text, o.color | 0]);
+    else if (o.type === "start") lv.start = [r(o.x), r(o.y)];
+    else if (o.type === "goal") lv.goal = [r(o.x), r(o.y), r(o.w), r(o.h)];
+  }
+  return lv;
+}
+function hintSize(text) { return { w: Math.max(4, String(text).length * 4), h: 6 }; }
+
+// ---------------------------------------------------------------- historique
+function snapshot() { return JSON.stringify(objects); }
+function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; markDirty(); }
+function restore(state) {
+  const idx = selected ? objects.indexOf(selected) : -1;
+  objects = JSON.parse(state);
+  selected = idx >= 0 && idx < objects.length ? objects[idx] : null;
+  markDirty(); renderProps(); draw();
+}
+function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
+function markDirty() { dirty = true; setStatus("Modifications non sauvegardées"); }
+
+// ---------------------------------------------------------------- coordonnées
+function snapV() { return +document.getElementById("snap").value; }
+function snap(v) { const s = snapV(); return Math.round(v / s) * s; }
+function hOf(o) { return o.type === "grate" ? GRATE_H : o.h; }
+
+// Aimant : colle un segment [debut, debut+taille] aux bords des autres objets
+// (à moins de 6 px écran), sinon à la grille. Alt = grille seule.
+function snapAxis(axis, start, size, self) {
+  const grid = snap(start);
+  let best = { v: grid, d: Infinity, guide: null };
+  if (mouse.alt) return best;
+  const thr = 6 / view.zoom;
+  for (const p of objects) {
+    if (p === self || p.type === "hint") continue;
+    const edges = axis === "x" ? [p.x, p.x + p.w] : [p.y, p.y + hOf(p)];
+    for (const e of edges) {
+      for (const off of size ? [0, size] : [0]) {
+        const cand = e - off, d = Math.abs(cand - start);
+        if (d < thr && d < best.d) best = { v: cand, d, guide: e };
+      }
+    }
+  }
+  return best;
+}
+function snapPoint(wx, wy, self) {
+  const sx = snapAxis("x", wx, 0, self), sy = snapAxis("y", wy, 0, self);
+  guides = [];
+  if (sx.guide !== null) guides.push({ axis: "x", v: sx.guide });
+  if (sy.guide !== null) guides.push({ axis: "y", v: sy.guide });
+  return { x: sx.v, y: sy.v };
+}
+
+function toWorld(sx, sy) { return { x: view.x + sx / view.zoom, y: view.y + sy / view.zoom }; }
+function toScreen(wx, wy) { return { x: (wx - view.x) * view.zoom, y: (wy - view.y) * view.zoom }; }
+function heightM(y) { const s = objects.find(o => o.type === "start"); return Math.round(((s ? s.y : 84) - y) / 8); }
+
+// ---------------------------------------------------------------- simulation de saut (mêmes constantes que le jeu)
+function simJump(dir) {
+  let x = 0, y = 0, vx = dir * 4, vy = -6.5; const pts = [[0, 0]];
+  for (let i = 0; i < 70; i++) {
+    if (dir) vx = Math.max(-4, Math.min(4, vx + 0.8 * dir));
+    vy = Math.min(vy + 0.4, 12); vx *= 0.985;
+    x += vx; y += vy; pts.push([x, y]);
+    if (y > 120) break;
+  }
+  return pts;
+}
+const JUMPS = [simJump(-1), simJump(0), simJump(1)];
+
+// ---------------------------------------------------------------- dessin
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect();
+  cv.width = Math.floor(r.width * devicePixelRatio);
+  cv.height = Math.floor(r.height * devicePixelRatio);
+  draw();
+}
+
+function draw() {
+  const dpr = devicePixelRatio;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0b0d1c"; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(view.zoom * dpr, 0, 0, view.zoom * dpr, -view.x * view.zoom * dpr, -view.y * view.zoom * dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  const top = view.y, bottom = view.y + cv.height / dpr / view.zoom;
+  const left = view.x, right = view.x + cv.width / dpr / view.zoom;
+
+  // zone de jeu (écran pyxel : x 0..384) : tuiles blanches comme dans le jeu
+  ctx.fillStyle = PAL[7]; ctx.fillRect(0, top, 384, bottom - top);
+  // grille fine au pas de l'aimant (si assez zoomé)
+  ctx.lineWidth = 1 / view.zoom;
+  const step = snapV();
+  if (step < 16 && step * view.zoom >= 5) {
+    ctx.strokeStyle = "rgba(0,0,0,.10)";
+    ctx.beginPath();
+    for (let gx = 0; gx <= 384; gx += step) { ctx.moveTo(gx, top); ctx.lineTo(gx, bottom); }
+    for (let gy = Math.floor(top / step) * step; gy <= bottom; gy += step) { ctx.moveTo(0, gy); ctx.lineTo(384, gy); }
+    ctx.stroke();
+  }
+  // grille des tuiles du jeu (16 px)
+  ctx.strokeStyle = "rgba(0,0,0,.55)";
+  ctx.beginPath();
+  for (let gx = 0; gx <= 384; gx += 16) { ctx.moveTo(gx, top); ctx.lineTo(gx, bottom); }
+  // les tuiles du jeu commencent a y = 84 (84 = 4 mod 16)
+  for (let gy = Math.floor((top - 4) / 16) * 16 + 4; gy <= bottom; gy += 16) { ctx.moveTo(0, gy); ctx.lineTo(384, gy); }
+  ctx.stroke();
+  // repères de hauteur tous les 80 px (10 m)
+  ctx.fillStyle = "rgba(255,255,255,.6)"; ctx.font = `${10 / view.zoom}px monospace`;
+  const start = objects.find(o => o.type === "start");
+  const sy = start ? start.y : 84;
+  for (let gy = Math.floor((top - sy) / 80) * 80 + sy; gy <= bottom; gy += 80) {
+    ctx.fillRect(-12, gy, 8, 1 / view.zoom);
+    ctx.fillText(`${Math.round((sy - gy) / 8)}m`, 386, gy + 3 / view.zoom);
+  }
+
+  for (const o of objects) {
+    if (o.y > bottom || o.y + o.h < top) continue;
+    drawObject(o);
+  }
+
+  // guide de saut
+  if (document.getElementById("jumpguide").checked && mouse.inside && !drag && !spaceDown) {
+    const fx = snap(mouse.wx), fy = snap(mouse.wy);
+    ctx.globalAlpha = .45; ctx.fillStyle = PAL[14]; ctx.fillRect(fx - 8, fy - 16, 16, 16); ctx.globalAlpha = 1;
+    ctx.setLineDash([3 / view.zoom, 3 / view.zoom]);
+    ctx.strokeStyle = PAL[10]; ctx.lineWidth = 1.5 / view.zoom;
+    for (const pts of JUMPS) {
+      ctx.beginPath();
+      pts.forEach(([dx, dy], i) => i ? ctx.lineTo(fx + dx, fy + dy) : ctx.moveTo(fx + dx, fy + dy));
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "rgba(233,195,91,.5)"; ctx.lineWidth = 1 / view.zoom;
+    ctx.beginPath(); ctx.moveTo(fx - 130, fy - 49.6); ctx.lineTo(fx + 130, fy - 49.6); ctx.stroke();
+  }
+
+  // aperçu de création
+  if (drag && drag.mode === "create") {
+    const r = createRect();
+    ctx.globalAlpha = .6; drawObject({ ...r, type: drag.kind, portal: drag.portal }); ctx.globalAlpha = 1;
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 1 / view.zoom; ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+
+  // traits d'alignement
+  if (guides.length) {
+    ctx.strokeStyle = PAL[8]; ctx.lineWidth = 1 / view.zoom;
+    ctx.beginPath();
+    for (const g of guides) {
+      if (g.axis === "x") { ctx.moveTo(g.v, top); ctx.lineTo(g.v, bottom); }
+      else { ctx.moveTo(left, g.v); ctx.lineTo(right, g.v); }
+    }
+    ctx.stroke();
+  }
+
+  // sélection
+  if (selected) {
+    ctx.strokeStyle = PAL[10]; ctx.lineWidth = 2 / view.zoom;
+    ctx.setLineDash([4 / view.zoom, 3 / view.zoom]);
+    ctx.strokeRect(selected.x - 1, selected.y - 1, selected.w + 2, selected.h + 2);
+    ctx.setLineDash([]);
+  }
+}
+
+function drawObject(o) {
+  const lw = 1 / view.zoom;
+  if (o.type === "block") {
+    ctx.fillStyle = o.portal ? PAL[6] : PAL[5]; ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.strokeStyle = o.portal ? PAL[12] : PAL[13]; ctx.lineWidth = lw;
+    ctx.beginPath();
+    for (let gx = o.x + 16; gx < o.x + o.w; gx += 16) { ctx.moveTo(gx, o.y); ctx.lineTo(gx, o.y + o.h); }
+    for (let gy = o.y + 16; gy < o.y + o.h; gy += 16) { ctx.moveTo(o.x, gy); ctx.lineTo(o.x + o.w, gy); }
+    ctx.stroke();
+    ctx.strokeStyle = "#000"; ctx.strokeRect(o.x, o.y, o.w, o.h);
+    if (o.portal && o.w < 28 && o.h < 28) { ctx.fillStyle = PAL[8]; ctx.fillRect(o.x, o.y, Math.min(4, o.w), Math.min(4, o.h)); }
+  } else if (o.type === "grate") {
+    ctx.fillStyle = PAL[4]; ctx.fillRect(o.x, o.y, o.w, 3);
+    ctx.fillStyle = PAL[15];
+    for (let px = o.x + 2; px < o.x + o.w - 1; px += 4) ctx.fillRect(px, o.y + 1, 1, 1);
+    ctx.fillStyle = "#000"; ctx.fillRect(o.x, o.y + 3, o.w, 1);
+  } else if (o.type === "hazard") {
+    ctx.fillStyle = PAL[11]; ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.fillStyle = PAL[3]; ctx.fillRect(o.x, o.y, o.w, 1);
+  } else if (o.type === "hint") {
+    ctx.font = "6px monospace"; ctx.textBaseline = "top";
+    ctx.fillStyle = PAL[1]; ctx.fillRect(o.x - 3, o.y - 2, o.w + 5, 9);
+    ctx.fillStyle = PAL[o.color & 15]; ctx.fillText(o.text, o.x, o.y);
+    ctx.textBaseline = "alphabetic";
+  } else if (o.type === "start") {
+    ctx.fillStyle = PAL[14]; ctx.fillRect(o.x, o.y, 16, 16);
+    ctx.fillStyle = "#000"; ctx.font = "7px monospace"; ctx.fillText("J", o.x + 5, o.y + 11);
+  } else if (o.type === "goal") {
+    ctx.strokeStyle = PAL[10]; ctx.lineWidth = 1; ctx.strokeRect(o.x + .5, o.y + .5, o.w - 1, o.h - 1);
+    ctx.fillStyle = PAL[1]; ctx.fillRect(o.x + 3, o.y + 3, o.w - 6, o.h - 6);
+    ctx.fillStyle = PAL[10]; ctx.fillRect(o.x + 6, o.y + 6, o.w - 12, o.h - 9);
+  }
+}
+
+// ---------------------------------------------------------------- hit test
+function hitTest(wx, wy) {
+  const pad = 2 / view.zoom;
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const o = objects[i];
+    const h = o.type === "grate" ? GRATE_H : o.h;
+    if (wx >= o.x - pad && wx <= o.x + o.w + pad && wy >= o.y - pad && wy <= o.y + h + pad) return o;
+  }
+  return null;
+}
+// ordre de priorité : petits objets au-dessus des gros (on clique d'abord ce qu'on voit)
+function sortObjects() {
+  const rank = { block: 0, hazard: 1, grate: 2, goal: 3, hint: 4, start: 5 };
+  // blocs portail au-dessus des gris, comme dans le jeu
+  const r = o => rank[o.type] + (o.type === "block" && o.portal ? 0.5 : 0);
+  objects.sort((a, b) => r(a) - r(b));
+}
+function edgeAt(o, wx, wy) {
+  if (!o || o.type === "start" || o.type === "hint") return null;
+  const t = 4 / view.zoom;
+  const h = o.type === "grate" ? GRATE_H : o.h;
+  const e = { l: Math.abs(wx - o.x) < t, r: Math.abs(wx - (o.x + o.w)) < t,
+              t: Math.abs(wy - o.y) < t, b: Math.abs(wy - (o.y + h)) < t };
+  if (o.type === "grate") { e.t = e.b = false; }
+  const inY = wy > o.y - t && wy < o.y + h + t, inX = wx > o.x - t && wx < o.x + o.w + t;
+  if (!inX || !inY) return null;
+  if (!(e.l || e.r || e.t || e.b)) return null;
+  return e;
+}
+function cursorFor(e) {
+  if (!e) return "crosshair";
+  if ((e.l && e.t) || (e.r && e.b)) return "nwse-resize";
+  if ((e.r && e.t) || (e.l && e.b)) return "nesw-resize";
+  if (e.l || e.r) return "ew-resize";
+  return "ns-resize";
+}
+
+// ---------------------------------------------------------------- création
+function createRect() {
+  const x0 = drag.x0, y0 = drag.y0;
+  const p1 = snapPoint(mouse.wx, mouse.wy, null), x1 = p1.x, y1 = p1.y;
+  const s = Math.max(snapV(), 4);
+  let x = Math.min(x0, x1), y = Math.min(y0, y1), w = Math.abs(x1 - x0), h = Math.abs(y1 - y0);
+  if (drag.kind === "grate") { y = y0; h = GRATE_H; w = Math.max(w, 16); }
+  else { w = Math.max(w, s); h = Math.max(h, s); }
+  return { x, y, w, h };
+}
+function placeSingle(type, wx, wy) {
+  pushUndo();
+  let o = objects.find(o => o.type === type);
+  const pt = snapPoint(wx, wy, o); guides = [];
+  if (type === "start") { o.x = pt.x - 8; o.y = pt.y - 16; }
+  else if (type === "goal") { o.x = pt.x - o.w / 2; o.y = pt.y - o.h; }
+  select(o);
+  setTool("select");
+}
+
+// ---------------------------------------------------------------- événements souris
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("mousedown", e => {
+  updateMouse(e);
+  const wx = mouse.wx, wy = mouse.wy;
+  if (e.button === 1 || (e.button === 0 && (spaceDown || e.ctrlKey))) {
+    drag = { mode: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y }; return;
+  }
+  if (e.button === 2) {
+    const o = hitTest(wx, wy);
+    if (o && o.type !== "start" && o.type !== "goal") {
+      pushUndo(); objects.splice(objects.indexOf(o), 1); if (selected === o) select(null); draw();
+    }
+    return;
+  }
+  if (e.button !== 0) return;
+
+  if (tool === "select") {
+    const edges = selected ? edgeAt(selected, wx, wy) : null;
+    if (edges) {
+      pushUndo();
+      drag = { mode: "resize", edges, o: selected, orig: { ...selected } }; return;
+    }
+    const o = hitTest(wx, wy);
+    select(o);
+    if (o) { pushUndo(); drag = { mode: "move", o, dx: wx - o.x, dy: wy - o.y, moved: false }; }
+    draw(); return;
+  }
+  if (tool === "start" || tool === "goal") { placeSingle(tool, wx, wy); draw(); return; }
+  if (tool === "hint") {
+    pushUndo();
+    const text = "Nouveau texte";
+    const o = { type: "hint", x: snap(wx), y: snap(wy), text, color: 7, ...hintSize(text) };
+    objects.push(o); sortObjects(); select(o);
+    setTool("select");
+    const inp = document.querySelector("#props input[data-k=text]");
+    if (inp) { inp.focus(); inp.select(); }
+    draw(); return;
+  }
+  const kind = tool === "white" ? "block" : tool;
+  const p0 = snapPoint(wx, wy, null);
+  drag = { mode: "create", kind, portal: tool === "white", x0: p0.x, y0: p0.y };
+});
+
+window.addEventListener("mousemove", e => {
+  updateMouse(e);
+  if (drag) {
+    if (drag.mode === "pan") {
+      view.x = drag.vx - (e.clientX - drag.sx) / view.zoom;
+      view.y = drag.vy - (e.clientY - drag.sy) / view.zoom;
+    } else if (drag.mode === "move") {
+      const o = drag.o;
+      const sx = snapAxis("x", mouse.wx - drag.dx, o.w, o);
+      const sy = snapAxis("y", mouse.wy - drag.dy, hOf(o), o);
+      o.x = sx.v; o.y = sy.v; drag.moved = true;
+      guides = [];
+      if (sx.guide !== null) guides.push({ axis: "x", v: sx.guide });
+      if (sy.guide !== null) guides.push({ axis: "y", v: sy.guide });
+      renderProps();
+    } else if (drag.mode === "resize") {
+      const o = drag.o, g = drag.orig, e2 = drag.edges, m = 4;
+      const pt = snapPoint(mouse.wx, mouse.wy, o), mx = pt.x, my = pt.y;
+      guides = guides.filter(gd => (gd.axis === "x" ? (e2.l || e2.r) : (e2.t || e2.b)));
+      if (e2.l) { const r = g.x + g.w; o.x = Math.min(mx, r - m); o.w = r - o.x; }
+      if (e2.r) { o.w = Math.max(m, mx - g.x); }
+      if (e2.t) { const b = g.y + g.h; o.y = Math.min(my, b - m); o.h = b - o.y; }
+      if (e2.b) { o.h = Math.max(m, my - g.y); }
+      renderProps();
+    }
+  } else if (tool === "select" && selected && mouse.inside) {
+    cv.style.cursor = cursorFor(edgeAt(selected, mouse.wx, mouse.wy));
+  } else {
+    cv.style.cursor = spaceDown || e.ctrlKey ? "grab" : "crosshair";
+  }
+  draw();
+});
+
+window.addEventListener("mouseup", () => {
+  if (!drag) return;
+  if (drag.mode === "create") {
+    const r = createRect();
+    pushUndo();
+    const o = { type: drag.kind, ...r };
+    if (drag.kind === "block") o.portal = drag.portal;
+    objects.push(o); sortObjects(); select(o);
+    setTool("select");
+  } else if (drag.mode === "move" && !drag.moved) {
+    undoStack.pop();   // simple clic : rien n'a changé
+  }
+  drag = null; guides = []; draw();
+});
+
+cv.addEventListener("mouseleave", () => { mouse.inside = false; draw(); });
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  if (e.ctrlKey) {
+    const before = toWorld(mouse.sx, mouse.sy);
+    view.zoom = Math.min(8, Math.max(0.5, view.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    view.x = before.x - mouse.sx / view.zoom; view.y = before.y - mouse.sy / view.zoom;
+  } else if (e.shiftKey) {
+    view.x += e.deltaY / view.zoom;
+  } else {
+    view.y += e.deltaY / view.zoom;
+  }
+  updateMouse(e); draw();
+}, { passive: false });
+
+function updateMouse(e) {
+  const r = cv.getBoundingClientRect();
+  mouse.sx = e.clientX - r.left; mouse.sy = e.clientY - r.top;
+  mouse.alt = e.altKey;
+  mouse.inside = mouse.sx >= 0 && mouse.sy >= 0 && mouse.sx < r.width && mouse.sy < r.height;
+  const w = toWorld(mouse.sx, mouse.sy); mouse.wx = w.x; mouse.wy = w.y;
+  coordsEl.textContent = `x ${Math.round(mouse.wx)}  y ${Math.round(mouse.wy)}  ·  ${heightM(mouse.wy)} m  ·  zoom ×${view.zoom.toFixed(1)}`;
+}
+
+// ---------------------------------------------------------------- clavier
+window.addEventListener("keydown", e => {
+  const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+  if (typing) return;
+  if (e.code === "Space") { spaceDown = true; cv.style.cursor = "grab"; e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") { e.preventDefault(); duplicate(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(false); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") { e.preventDefault(); copySelected(true); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") { e.preventDefault(); paste(); return; }
+  if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
+  if (e.key.toLowerCase() === "b" && selected && selected.type === "block") {
+    pushUndo(); selected.portal = !selected.portal; sortObjects(); renderProps(); draw(); return;
+  }
+  if (e.key === "Escape") { select(null); setTool("select"); draw(); return; }
+  if (e.key.startsWith("Arrow") && selected) {
+    e.preventDefault();
+    const st = snapV() * (e.shiftKey ? 4 : 1);
+    pushUndo();
+    if (e.key === "ArrowLeft") selected.x -= st;
+    if (e.key === "ArrowRight") selected.x += st;
+    if (e.key === "ArrowUp") selected.y -= st;
+    if (e.key === "ArrowDown") selected.y += st;
+    renderProps(); draw(); return;
+  }
+  const t = TOOLS.find(t => t.key === e.key.toLowerCase());
+  if (t && !e.ctrlKey) setTool(t.id);
+});
+window.addEventListener("keyup", e => { if (e.code === "Space") { spaceDown = false; cv.style.cursor = "crosshair"; } });
+
+function deleteSelected() {
+  if (!selected || selected.type === "start" || selected.type === "goal") return;
+  pushUndo(); objects.splice(objects.indexOf(selected), 1); select(null); draw();
+}
+function copySelected(couper) {
+  if (!selected || selected.type === "start" || selected.type === "goal") return;
+  pressePapier = { ...selected };
+  if (couper) { deleteSelected(); setStatus("Coupé – Ctrl+V pour coller"); }
+  else setStatus("Copié – Ctrl+V pour coller sous la souris");
+}
+function paste() {
+  if (!pressePapier) return;
+  pushUndo();
+  const o = { ...pressePapier };
+  if (mouse.inside) {
+    // collé sous la souris (centré), avec l'aimant
+    const sx = snapAxis("x", mouse.wx - o.w / 2, o.w, null);
+    const sy = snapAxis("y", mouse.wy - hOf(o) / 2, hOf(o), null);
+    o.x = sx.v; o.y = sy.v;
+  } else {
+    o.x += 16; o.y -= 16;
+  }
+  pressePapier = { ...o };   // collages successifs hors canvas : décalés
+  objects.push(o); sortObjects(); select(o); setTool("select"); draw();
+}
+function duplicate() {
+  if (!selected || selected.type === "start" || selected.type === "goal") return;
+  pushUndo();
+  const o = { ...selected, x: selected.x + 16, y: selected.y - 16 };
+  objects.push(o); sortObjects(); select(o); draw();
+}
+
+// ---------------------------------------------------------------- UI
+function setTool(id) {
+  tool = id;
+  document.querySelectorAll(".tool").forEach(b => b.classList.toggle("active", b.dataset.id === id));
+}
+function select(o) { selected = o; renderProps(); }
+
+function buildTools() {
+  const box = document.getElementById("tools");
+  for (const t of TOOLS) {
+    const b = document.createElement("button");
+    b.className = "tool"; b.dataset.id = t.id;
+    b.innerHTML = (t.color ? `<span class="swatch" style="background:${t.color}"></span>` : `<span class="swatch" style="background:transparent;border-color:#888"></span>`)
+      + `<span>${t.name}</span><kbd>${t.key.toUpperCase()}</kbd>`;
+    b.onclick = () => setTool(t.id);
+    box.appendChild(b);
+  }
+  setTool("select");
+}
+
+const LABELS = { block: "Bloc", grate: "Grille", hazard: "Slime", hint: "Texte", start: "Départ", goal: "Sommet" };
+function renderProps() {
+  const box = document.getElementById("props");
+  if (!selected) {
+    box.innerHTML = `<div id="props-empty">Rien de sélectionné.<br>Outil Sélection (V) puis clic sur un objet.</div>`;
+    return;
+  }
+  const o = selected;
+  const fields = [["x", "X"], ["y", "Y"]];
+  if (["block", "hazard", "goal", "grate"].includes(o.type)) fields.push(["w", "Largeur"]);
+  if (["block", "hazard", "goal"].includes(o.type)) fields.push(["h", "Hauteur"]);
+  let html = `<div style="margin-bottom:6px"><b>${LABELS[o.type]}</b> · ${heightM(o.y)} m</div>`;
+  for (const [k, label] of fields)
+    html += `<label class="row">${label}<input type="number" data-k="${k}" value="${Math.round(o[k])}"></label>`;
+  if (o.type === "block")
+    html += `<label class="row">Portail possible (B)<input type="checkbox" data-k="portal" ${o.portal ? "checked" : ""}></label>`;
+  if (o.type === "hint") {
+    html += `<label style="display:block;margin:6px 0 2px">Texte</label><input type="text" class="wide" data-k="text" value="${escapeHtml(o.text)}">`;
+    html += `<label class="row">Couleur<select data-k="color">${PAL.map((c, i) => `<option value="${i}" ${i === o.color ? "selected" : ""} style="background:${c}">${i}</option>`).join("")}</select></label>`;
+  }
+  if (o.type === "block" && o.portal && o.w < 28 && o.h < 28)
+    html += `<div class="warn">Trop petit : un portail demande au moins 28 px de large (sol/plafond) ou de haut (mur).</div>`;
+  box.innerHTML = html;
+  box.querySelectorAll("[data-k]").forEach(inp => {
+    inp.addEventListener("focus", () => pushUndo(), { once: true });
+    inp.addEventListener("input", () => {
+      const k = inp.dataset.k;
+      if (inp.type === "checkbox") o[k] = inp.checked;
+      else if (k === "text") { o.text = inp.value; Object.assign(o, hintSize(o.text)); }
+      else if (k === "color") o.color = +inp.value;
+      else if (inp.value !== "") o[k] = +inp.value;
+      markDirty(); draw();
+    });
+  });
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function setStatus(t) { statusEl.textContent = t; }
+
+// ---------------------------------------------------------------- fichiers
+async function load() {
+  try {
+    const r = await fetch(API + "/niveau.json", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    objects = fromLevel(await r.json()); sortObjects();
+    const s = objects.find(o => o.type === "start");
+    const vw = cv.width / devicePixelRatio / view.zoom, vh = cv.height / devicePixelRatio / view.zoom;
+    view.x = 192 - vw / 2;
+    view.y = s.y + 60 - vh;
+    dirty = false; setStatus("niveau.json chargé");
+  } catch (err) {
+    objects = fromLevel({ blocks: [[0, 100, 382, 40, false]] });
+    setStatus(SANS_SERVEUR);
+  }
+  draw();
+}
+async function save() {
+  const body = JSON.stringify(toLevel());
+  try {
+    const r = await fetch(API + "/niveau.json", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    const msg = (await r.json()).message;
+    if (!r.ok) throw new Error(msg);
+    dirty = false; setStatus(`✔ ${msg} – F5 dans le jeu pour recharger`);
+    return true;
+  } catch (err) {
+    setStatus(err instanceof TypeError ? SANS_SERVEUR : "Sauvegarde impossible : " + err.message);
+    return false;
+  }
+}
+async function play() {
+  if (dirty && !(await save())) return;
+  try {
+    const r = await fetch(API + "/jouer", { method: "POST" });
+    setStatus((await r.json()).message);
+  } catch (err) {
+    setStatus(err instanceof TypeError ? SANS_SERVEUR : "Impossible de lancer le jeu : " + err.message);
+  }
+}
+function exportFile() {
+  const blob = new Blob([JSON.stringify(toLevel(), null, 1)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "niveau.json"; a.click();
+  URL.revokeObjectURL(a.href);
+}
+document.getElementById("file").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { pushUndo(); objects = fromLevel(JSON.parse(await f.text())); sortObjects(); select(null); draw(); setStatus("Importé : " + f.name); }
+  catch (err) { setStatus("Fichier invalide : " + err.message); }
+  e.target.value = "";
+});
+document.getElementById("btn-save").onclick = save;
+document.getElementById("btn-play").onclick = play;
+document.getElementById("btn-export").onclick = exportFile;
+document.getElementById("btn-import").onclick = () => document.getElementById("file").click();
+document.getElementById("snap").onchange = draw;
+document.getElementById("jumpguide").onchange = draw;
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("resize", resize);
+
+buildTools();
+resize();
+load();
+</script>
+</body>
+</html>
