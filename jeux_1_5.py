@@ -30,11 +30,41 @@ PLATFORMS = (
 )
 
 SURFACES = (
-    {"type": "vertical", "coord": 0.0, "min_span": -920.0, "max_span": 100.0, "angle": 0},
-    {"type": "vertical", "coord": 382.0, "min_span": -920.0, "max_span": 100.0, "angle": 180},
-    {"type": "horizontal", "coord": 100.0, "min_span": 0.0, "max_span": 382.0, "angle": 270},
-    {"type": "horizontal", "coord": 68.0, "min_span": 32.0, "max_span": 64.0, "angle": 270},
-    {"type": "horizontal", "coord": -900.0, "min_span": 0.0, "max_span": 382.0, "angle": 90},
+    {
+        "type": "vertical",
+        "coord": 0.0,
+        "min_span": -920.0,
+        "max_span": 100.0,
+        "angle": 0,
+    },
+    {
+        "type": "vertical",
+        "coord": 382.0,
+        "min_span": -920.0,
+        "max_span": 100.0,
+        "angle": 180,
+    },
+    {
+        "type": "horizontal",
+        "coord": 100.0,
+        "min_span": 0.0,
+        "max_span": 382.0,
+        "angle": 270,
+    },
+    {
+        "type": "horizontal",
+        "coord": 68.0,
+        "min_span": 32.0,
+        "max_span": 64.0,
+        "angle": 270,
+    },
+    {
+        "type": "horizontal",
+        "coord": -900.0,
+        "min_span": 0.0,
+        "max_span": 382.0,
+        "angle": 90,
+    },
 )
 
 
@@ -65,9 +95,7 @@ class Portail:
         if not self.active:
             return
 
-        color_outer, color_inner, color_core = PORTAL_COLORS.get(
-            portal_id, (9, 10, 7)
-        )
+        color_outer, color_inner, color_core = PORTAL_COLORS.get(portal_id, (9, 10, 7))
         pulse = (pyxel.frame_count // 4) % 2
         portal_x = int(self.pos_x)
         portal_y = int(self.pos_y)
@@ -177,17 +205,31 @@ class Joueur:
 
         for surface in SURFACES:
             if surface["type"] == "vertical":
-                if (surface["angle"] == 0 and dir_x < -1e-4) or (surface["angle"] == 180 and dir_x > 1e-4):
+                if (surface["angle"] == 0 and dir_x < -1e-4) or (
+                    surface["angle"] == 180 and dir_x > 1e-4
+                ):
                     ray_distance = (surface["coord"] - origin_x) / dir_x
                     hit_y = origin_y + ray_distance * dir_y
-                    if ray_distance > 0 and surface["min_span"] <= hit_y <= surface["max_span"]:
-                        surface_hits.append((ray_distance, surface["coord"], hit_y, surface["angle"]))
+                    if (
+                        ray_distance > 0
+                        and surface["min_span"] <= hit_y <= surface["max_span"]
+                    ):
+                        surface_hits.append(
+                            (ray_distance, surface["coord"], hit_y, surface["angle"])
+                        )
             else:
-                if (surface["angle"] == 270 and dir_y > 1e-4) or (surface["angle"] == 90 and dir_y < -1e-4):
+                if (surface["angle"] == 270 and dir_y > 1e-4) or (
+                    surface["angle"] == 90 and dir_y < -1e-4
+                ):
                     ray_distance = (surface["coord"] - origin_y) / dir_y
                     hit_x = origin_x + ray_distance * dir_x
-                    if ray_distance > 0 and surface["min_span"] <= hit_x <= surface["max_span"]:
-                        surface_hits.append((ray_distance, hit_x, surface["coord"], surface["angle"]))
+                    if (
+                        ray_distance > 0
+                        and surface["min_span"] <= hit_x <= surface["max_span"]
+                    ):
+                        surface_hits.append(
+                            (ray_distance, hit_x, surface["coord"], surface["angle"])
+                        )
 
         if not surface_hits:
             return None
@@ -252,8 +294,7 @@ class Joueur:
                 self.velocityX = 0.0
         else:
             self.velocityY += GRAVITY
-            if self.velocityY > MAX_FALL_SPEED:
-                self.velocityY = MAX_FALL_SPEED
+            self.velocityY = min(self.velocityY, MAX_FALL_SPEED)
 
             if self.is_on_ground:
                 if not self.is_moving:
@@ -501,8 +542,7 @@ class Joueur:
             )
             if not is_in_portal_wall:
                 self.x = 0.0
-                if self.velocityX < 0.0:
-                    self.velocityX = 0.0
+                self.velocityX = max(self.velocityX, 0.0)
 
         if self.x + 16.0 >= 382.0:
             is_in_portal_wall = any(
@@ -514,8 +554,7 @@ class Joueur:
             )
             if not is_in_portal_wall:
                 self.x = 382.0 - 16.0
-                if self.velocityX > 0.0:
-                    self.velocityX = 0.0
+                self.velocityX = min(self.velocityX, 0.0)
 
         if self.y > FALL_LIMIT_Y:
             self.respawn()
@@ -631,8 +670,8 @@ class Jeux:
     def update(self):
         global Player, Portal1, Portal2
         Player.gerer_entrees()
-        Player.appliquer_modificateurs_vitesse()
         Player.gerer_portails(Portal1, Portal2)
+        Player.appliquer_modificateurs_vitesse()
         Player.gerer_collisions(Portal1, Portal2)
         Player.appliquer_deplacement()
 
@@ -650,7 +689,7 @@ class Jeux:
 
         self.update_camera()
 
-        pyxel.bltm(0, -924, 0, 0, 0, 416, 1032)
+        draw_background()
 
         for beam in Player.shot_beams:
             pyxel.line(beam["x1"], beam["y1"], beam["x2"], beam["y2"], beam["color"])
@@ -674,6 +713,30 @@ def draw_mouse(mouse_x, mouse_y, portal_1=None, portal_2=None):
     pyxel.pset(mouse_x - 2, mouse_y, 12 if p1.active else 5)
     pyxel.pset(mouse_x + 2, mouse_y, 9 if p2.active else 4)
     pyxel.pset(mouse_x, mouse_y, 7)
+
+
+def draw_background():
+    for x in range(24):
+        for y in range(64):
+            if y % 2 == 1:
+                rotate = 90 * (x % 2)
+            else:
+                rotate = 270 - 90 * (x % 2)
+            tile_u = ((x + y) % 4) * 16
+            tile_v = (((x + y) // 4) % 2) * 16
+
+            pyxel.blt(
+                x * 16,
+                -y * 16 + 84,
+                1,
+                tile_u,
+                tile_v,
+                16,
+                16,
+                colkey=None,
+                rotate=rotate,
+            )
+    pyxel.bltm(0, -924, 0, 0, 0, 416, 1032, 7)
 
 
 drawMouse = draw_mouse
